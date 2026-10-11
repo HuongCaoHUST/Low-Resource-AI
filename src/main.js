@@ -1,0 +1,40 @@
+import './styles/global.css'
+import { siteConfig } from './config.js'
+import { exercises } from './content/exercises/index.js'
+
+const lessonFiles = import.meta.glob('./content/lessons/*.md', { query: '?raw', import: 'default', eager: true })
+
+function slugify(value) { return value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-') }
+function parseMarkdown(source) {
+  const match = source.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/); const metadata = {}; const body = match ? match[2].trim() : source.trim()
+  if (match) match[1].split('\n').forEach((line) => { const [key, ...value] = line.split(':'); metadata[key.trim()] = value.join(':').trim() })
+  return { ...metadata, order: Number(metadata.order || 0), slug: slugify(metadata.title || ''), body }
+}
+const lessons = Object.values(lessonFiles).map(parseMarkdown).sort((a, b) => a.order - b.order)
+function escapeHtml(value) { return value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char])) }
+function inlineMarkdown(value) { return escapeHtml(value).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>') }
+function renderMarkdown(source) {
+  const lines = source.split('\n'); let html = ''; let code = ''; let inCode = false; let listOpen = false
+  const closeList = () => { if (listOpen) { html += '</ul>'; listOpen = false } }
+  lines.forEach((line) => {
+    if (line.startsWith('```')) { if (inCode) { html += `<pre><code>${escapeHtml(code.trim())}</code></pre>`; code = ''; inCode = false } else { closeList(); inCode = true } return }
+    if (inCode) { code += `${line}\n`; return }
+    if (!line.trim()) { closeList(); return }
+    const heading = line.match(/^(#{1,3})\s+(.+)/); const item = line.match(/^[-*]\s+(.+)/)
+    if (heading) { closeList(); const level = heading[1].length; html += `<h${level}>${inlineMarkdown(heading[2])}</h${level}>` }
+    else if (item) { if (!listOpen) { html += '<ul>'; listOpen = true } html += `<li>${inlineMarkdown(item[1])}</li>` }
+    else { closeList(); html += `<p>${inlineMarkdown(line)}</p>` }
+  }); closeList(); return html
+}
+function navLink(href, label, current) { return `<a class="nav-link ${current === href ? 'active' : ''}" href="${href}">${label}</a>` }
+function header(current) { return `<header class="site-header"><div class="container header-inner"><a class="brand" href="#/"><span class="brand-mark">D</span><span>${siteConfig.courseName}<small>HUST</small></span></a><button class="menu-toggle" aria-label="Mở menu" aria-expanded="false">Menu</button><nav class="nav" aria-label="Điều hướng">${navLink('#/', 'Trang chủ', current)}${navLink('#/lessons', 'Bài học', current)}${navLink('#/exercises', 'Bài tập', current)}${navLink('#/resources', 'Tài nguyên', current)}<a class="github-link" href="${siteConfig.repositoryUrl}" target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>` }
+function footer() { return `<footer class="site-footer"><div class="container footer-inner"><span>© ${new Date().getFullYear()} ${siteConfig.author}</span><a href="${siteConfig.repositoryUrl}" target="_blank" rel="noreferrer">Repository trên GitHub ↗</a></div></footer>` }
+function shell(content, current) { document.querySelector('#app').innerHTML = `${header(current)}<main>${content}</main>${footer()}`; document.querySelector('.menu-toggle').addEventListener('click', (event) => { const nav = document.querySelector('.nav'); const open = nav.classList.toggle('open'); event.currentTarget.setAttribute('aria-expanded', open) }) }
+function home() { const grouped = lessons.reduce((groups, lesson) => { (groups[lesson.chapter] ||= []).push(lesson); return groups }, {}); shell(`<div class="container home"><section class="intro"><p class="eyebrow">${siteConfig.eyebrow}</p><h1>${siteConfig.courseName}</h1><p class="lead">${siteConfig.description}</p><div class="intro-links"><a class="button" href="#/lessons">Xem lộ trình <span>→</span></a><a href="#/resources">Tài nguyên học tập</a></div></section><section class="path-section"><div class="section-heading"><p class="eyebrow">LỘ TRÌNH</p><h2>Học theo từng bước</h2></div><div class="path-list">${Object.entries(grouped).map(([chapter, items], index) => `<div class="path-row"><span class="path-number">0${index + 1}</span><div><h3>${chapter}</h3><p>${items.length} bài học · ${items.map((item) => item.title).join(' · ')}</p></div></div>`).join('')}</div></section></div>`, '#/') }
+function lessonsPage() { const rows = lessons.map((lesson) => `<a class="lesson-row" href="#/lessons/${lesson.slug}"><span class="lesson-number">${String(lesson.order).padStart(2, '0')}</span><span class="lesson-main"><strong>${lesson.title}</strong><small>${lesson.description}</small></span><span class="arrow">→</span></a>`).join(''); shell(`<div class="container page"><div class="page-heading"><p class="eyebrow">NỘI DUNG KHÓA HỌC</p><h1>Bài học</h1><p>Các bài học ngắn, tập trung vào kỹ năng có thể áp dụng ngay.</p></div><div class="lesson-list">${rows}</div></div>`, '#/lessons') }
+function lessonPage(slug) { const lesson = lessons.find((item) => item.slug === slug); if (!lesson) return notFound(); const index = lessons.indexOf(lesson); const previous = lessons[index - 1]; const next = lessons[index + 1]; shell(`<div class="container lesson-layout"><article class="lesson-content"><p class="eyebrow">BÀI ${String(lesson.order).padStart(2, '0')} · ${lesson.chapter.toUpperCase()}</p><h1>${lesson.title}</h1><p class="lesson-description">${lesson.description}</p><div class="markdown">${renderMarkdown(lesson.body)}</div><div class="lesson-nav">${previous ? `<a href="#/lessons/${previous.slug}">← <span>Bài trước<strong>${previous.title}</strong></span></a>` : '<span></span>'}${next ? `<a class="next" href="#/lessons/${next.slug}"><span>Bài tiếp theo<strong>${next.title}</strong></span> →</a>` : ''}</div></article><aside class="sidebar"><p class="eyebrow">LIÊN QUAN</p><a href="#/exercises">Bài tập</a><a href="#/resources">Source & tài nguyên</a></aside></div>`, '#/lessons') }
+function exercisesPage() { shell(`<div class="container page narrow"><div class="page-heading"><p class="eyebrow">THỰC HÀNH</p><h1>Bài tập</h1><p>Hoàn thành từng bài sau khi đọc nội dung tương ứng. Tập trung vào quy trình và thói quen làm việc.</p></div><div class="exercise-list">${exercises.map((item) => `<div class="exercise-row"><span class="lesson-number">${item.number}</span><div><p class="exercise-lesson">${item.lesson}</p><h2>${item.title}</h2><p>${item.description}</p></div></div>`).join('')}</div></div>`, '#/exercises') }
+function resourcesPage() { shell(`<div class="container page narrow"><div class="page-heading"><p class="eyebrow">THAM KHẢO</p><h1>Tài nguyên</h1><p>Các điểm bắt đầu để đọc thêm và tiếp tục thực hành.</p></div><div class="resource-list"><a href="${siteConfig.repositoryUrl}" target="_blank" rel="noreferrer"><span>Source code</span><small>Repository chứa mã nguồn và nội dung khóa học ↗</small></a><a href="https://git-scm.com/doc" target="_blank" rel="noreferrer"><span>Git documentation</span><small>Tài liệu tham khảo chính thức về Git ↗</small></a><a href="https://developer.mozilla.org/vi/docs/Learn" target="_blank" rel="noreferrer"><span>MDN Learn</span><small>Nền tảng kiến thức web mở và miễn phí ↗</small></a></div></div>`, '#/resources') }
+function notFound() { shell(`<div class="container page not-found"><p class="eyebrow">404</p><h1>Không tìm thấy trang</h1><p>Liên kết này có thể đã thay đổi hoặc chưa được tạo.</p><a class="button" href="#/">Về trang chủ</a></div>`, '') }
+function render() { const path = window.location.hash.replace(/^#/, '') || '/'; if (path === '/') home(); else if (path === '/lessons') lessonsPage(); else if (path.startsWith('/lessons/')) lessonPage(path.slice('/lessons/'.length)); else if (path === '/exercises') exercisesPage(); else if (path === '/resources') resourcesPage(); else notFound() }
+window.addEventListener('hashchange', render); render()
