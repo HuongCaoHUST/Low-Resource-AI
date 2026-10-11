@@ -1,6 +1,6 @@
 # Dev Course · HUST
 
-Website tài liệu lập trình tĩnh, xây bằng Vite và JavaScript thuần. Nội dung bài học nằm trong Markdown để dễ chỉnh sửa và deploy miễn phí bằng GitHub Pages.
+Website tài liệu lập trình tĩnh, xây bằng Vite và JavaScript thuần. Nội dung bài học nằm trong Markdown để dễ chỉnh sửa và deploy miễn phí bằng GitHub Pages và Github Page.
 
 ## Chạy local
 
